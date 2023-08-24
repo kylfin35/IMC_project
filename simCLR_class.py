@@ -374,12 +374,14 @@ class lightning_clr(pl.LightningModule):
         tmp_output_lst = []
         for i in range(len(xj_)):
             xj = xj_[i]
+            print('xj', xj.shape)
             if len(xj.shape) == 5:
                 xj = torch.flatten(xj, 0,1)
             xj = self.augmenter(xj, 'Strong')
             conv2 = self.encoder(xj)
             tmp_output_lst.append(conv2)
-        average_output = torch.mean(torch.stack(tmp_output_lst), dim=0)
+        all_outputs = torch.stack(tmp_output_lst)
+        average_output = torch.mean(all_outputs, dim=0)
         print('avg', average_output.shape)
         print('xi', conv.shape)
         zj = self.mlp(average_output)
