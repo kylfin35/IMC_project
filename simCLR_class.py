@@ -372,8 +372,8 @@ class lightning_clr(pl.LightningModule):
         conv = self.encoder(xi)
         zi = self.mlp(conv)
         tmp_output_lst = []
-        for i in range(len(xj_)):
-            xj = xj_[i]
+        for i in range(xj_.shape[1]):
+            xj = xj_[:,i,:,:,:]
             print('xj', xj.shape)
             if len(xj.shape) == 5:
                 xj = torch.flatten(xj, 0,1)
