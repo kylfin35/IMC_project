@@ -129,7 +129,7 @@ class ImageDataset(Dataset):
         else:
             img_id = self.img_ids[idx]
             x = imread(os.path.join(self.imgs_path, img_id))
-        x = np.clip(np.array(x), None, x.quantile(.995))
+        x = np.clip(np.array(x), None, np.quantile(x, .99))
         x = torch.tensor(x) / x.max()
         if self.norm:
             G_blur = torchvision.transforms.GaussianBlur(5, 1.5)
