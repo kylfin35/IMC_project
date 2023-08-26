@@ -123,6 +123,10 @@ class ImageDataset(Dataset):
         corners = np.concatenate(cornerlst)
         return anchors_, neighbors_lst, corners
 
+    def get_num_markers(self, dataset):
+        a,_,_ = dataset[0]
+        return a.shape[1]
+    
     def __getitem__(self, idx):
         if self.imgs_path[-3:] == 'npz':
             x = self.np_images[idx]
