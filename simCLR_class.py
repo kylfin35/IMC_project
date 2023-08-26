@@ -59,7 +59,10 @@ class ImageDataset(Dataset):
     def __init__(self, imgs_path, n_tiles, delta, tilesize, channel_weight=None, strength='Weak', swav_=False,
                  norm=True, n_neighbors=1):
         self.imgs_path = imgs_path
-        self.img_ids = [a for a in os.listdir(imgs_path)]
+        if self.imgs_path[-3:] == 'npz':
+            self.np_images, self.img_ids = self.process_np(self.imgs_path)
+        else:
+            self.img_ids = [a for a in os.listdir(imgs_path)]
         self.n_tiles = n_tiles
         self.delta = delta
         self.tilesize = tilesize
@@ -67,6 +70,15 @@ class ImageDataset(Dataset):
         self.swav_ = swav_
         self.norm = norm
         self.n_neighbors = n_neighbors
+
+    def proces_np(self, path_):
+        data = np.load(path_, allow_pickle=True)
+        np_images = data['X']
+        img_ids = [a for a in range(len(data))]
+        for i in range(len(images)):
+            t = images[i] / np.max(images[i], axis=(1, 2)).reshape(len(images[i]), 1, 1)
+            np_images[i] = t
+        return np_images, img_ids
 
     def __len__(self):
         return len(self.img_ids)
@@ -112,8 +124,11 @@ class ImageDataset(Dataset):
         return anchors_, neighbors_lst, corners
 
     def __getitem__(self, idx):
-        img_id = self.img_ids[idx]
-        x = imread(os.path.join(self.imgs_path, img_id))
+        if self.imgs_path[-3:] == 'npz':
+            x = self.np_images[idx]
+        else:
+            img_id = self.img_ids[idx]
+            x = imread(os.path.join(self.imgs_path, img_id))
         x = torch.tensor(x) / x.max()
         if self.norm:
             G_blur = torchvision.transforms.GaussianBlur(5, 1.5)
@@ -126,10 +141,10 @@ class ImageDataset(Dataset):
         if self.n_tiles == None:
             return x.squeeze()
         else:
-        #    if self.strength == 'Strong':
-        #        delta_ = self.delta
-        #    elif self.strength == 'Weak':
-        #        delta_ = self.delta
+            #    if self.strength == 'Strong':
+            #        delta_ = self.delta
+            #    elif self.strength == 'Weak':
+            #        delta_ = self.delta
             anchors, neighbors, corners = self.tile_image(x, self.tilesize, self.n_tiles, self.delta, self.n_neighbors)
             anchors, neighbors = torch.tensor(np.array(anchors)).float(), torch.tensor(np.array(neighbors)).float()
             return anchors, neighbors, corners
@@ -353,14 +368,14 @@ class lightning_clr(pl.LightningModule):
         xi, xj_, _ = train_batch
         if len(xi.shape) == 5:
             xi = torch.flatten(xi, 0, 1)
-            #xj = torch.flatten(xj, 0, 1)
+            # xj = torch.flatten(xj, 0, 1)
 
         r1 = random.uniform(0, 1)
         r2 = random.uniform(0, 1)
-      ##  if r1 < .33:
-      ##      xj = self.augmenter(xj, 'Weak')
-      ##  elif r1 > .66:
-      ##      xj = self.augmenter(xj, 'Strong')
+        ##  if r1 < .33:
+        ##      xj = self.augmenter(xj, 'Weak')
+        ##  elif r1 > .66:
+        ##      xj = self.augmenter(xj, 'Strong')
         # if r1<.66:
         #   xi = self.augmenter(xi, 'Strong')
         # else:
@@ -375,7 +390,7 @@ class lightning_clr(pl.LightningModule):
         for i in range(xj_.shape[1]):
             xj = xj_[:, i, :, :, :]
             if len(xj.shape) == 5:
-                xj = torch.flatten(xj, 0,1)
+                xj = torch.flatten(xj, 0, 1)
             xj = self.augmenter(xj, 'Strong')
             conv2 = self.encoder(xj)
             tmp_output_lst.append(conv2)
@@ -401,4 +416,3 @@ class lightning_clr(pl.LightningModule):
         loss = self.loss_fn(zi, zj, self.loss_type)
         print('val loss', loss)
         return {"val_loss": loss}
-
