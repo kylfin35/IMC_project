@@ -12,7 +12,7 @@ import pytorch_lightning as pl
 from flash.core.optimizers import LARS
 
 
-class augment_images(nn.Module):
+class Augmenter(nn.Module):
     def __init__(self, tilesize):
         super().__init__()
         self.tilesize = tilesize
@@ -128,7 +128,10 @@ class ImageDataset(Dataset):
             x = self.np_images[idx]
         else:
             img_id = self.img_ids[idx]
-            x = imread(os.path.join(self.imgs_path, img_id))
+            if img_id[-3:] == 'tif':
+                x = imread(os.path.join(self.imgs_path, img_id))
+            elif img_id[-2:] == '.t':
+                x = torch.load(os.path.join(self.imgs_path, img_id))
         x = np.clip(np.array(x), None, np.quantile(x, .99))
         x = torch.tensor(x) / x.max()
         if self.norm:
@@ -142,10 +145,6 @@ class ImageDataset(Dataset):
         if self.n_tiles == None:
             return x.squeeze()
         else:
-            #    if self.strength == 'Strong':
-            #        delta_ = self.delta
-            #    elif self.strength == 'Weak':
-            #        delta_ = self.delta
             anchors, neighbors, corners = self.tile_image(x, self.tilesize, self.n_tiles, self.delta, self.n_neighbors)
             anchors, neighbors = torch.tensor(np.array(anchors)).float(), torch.tensor(np.array(neighbors)).float()
             return anchors, neighbors, corners
@@ -296,7 +295,7 @@ class MLP_head(nn.Module):
         return F.normalize(out, dim=-1)
 
 
-class save_module(nn.Module):
+class SaveModule(nn.Module):
     def __init__(self, encoder_, mlp_):
         super(save_module, self).__init__()
         self.encoder_ = encoder_
@@ -308,7 +307,7 @@ class save_module(nn.Module):
         return conv, out
 
 
-class lightning_clr(pl.LightningModule):
+class LightningCLR(pl.LightningModule):
     def __init__(self,
                  config,
                  encoder: nn.Module,
