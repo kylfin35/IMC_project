@@ -74,9 +74,9 @@ class ImageDataset(Dataset):
     def process_np(self, path_):
         data = np.load(path_, allow_pickle=True)
         np_images = data['X']
-        img_ids = [a for a in range(len(data))]
-        for i in range(len(images)):
-            t = images[i] / np.max(images[i], axis=(1, 2)).reshape(len(images[i]), 1, 1)
+        img_ids = [a for a in range(len(np_images))]
+        for i in range(len(np_images)):
+            t = np_images[i] / np.max(np_images[i], axis=(1, 2)).reshape(len(np_images[i]), 1, 1)
             np_images[i] = t
         return np_images, img_ids
 
@@ -129,6 +129,7 @@ class ImageDataset(Dataset):
         else:
             img_id = self.img_ids[idx]
             x = imread(os.path.join(self.imgs_path, img_id))
+        x = np.clip(np.array(x), None, x.quantile(.995))
         x = torch.tensor(x) / x.max()
         if self.norm:
             G_blur = torchvision.transforms.GaussianBlur(5, 1.5)
