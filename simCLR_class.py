@@ -71,7 +71,7 @@ class ImageDataset(Dataset):
         self.norm = norm
         self.n_neighbors = n_neighbors
 
-    def proces_np(self, path_):
+    def process_np(self, path_):
         data = np.load(path_, allow_pickle=True)
         np_images = data['X']
         img_ids = [a for a in range(len(data))]
