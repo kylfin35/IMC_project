@@ -441,7 +441,7 @@ class PretrainedResnet(nn.Module):
     def expand_input_weights(self):
         copy_weights = 0
         self.new_layer.weight[:, :layer.in_channels, :, :].data = self.layer.weight.clone()
-        num_iterations, leftover = int(new_in_channels//3) int(new_in_channels%3)
+        num_iterations, leftover = int(new_in_channels//3), int(new_in_channels%3)
 
 
         for i in range(self.new_in_channels - self.layer.in_channels):
