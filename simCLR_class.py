@@ -10,6 +10,7 @@ import os
 import gc
 import pytorch_lightning as pl
 from flash.core.optimizers import LARS
+from torchvision import models
 
 
 class Augmenter(nn.Module):
@@ -124,19 +125,20 @@ class ImageDataset(Dataset):
         return anchors_, neighbors_lst, corners
 
     def get_num_markers(self, dataset):
-        a,_,_ = dataset[0]
+        a, _, _ = dataset[0]
         return a.shape[1]
-    
+
     def __getitem__(self, idx):
         if self.imgs_path[-3:] == 'npz':
             x = self.np_images[idx]
+            x = np.clip(np.array(x), None, np.quantile(x, .99))
         else:
             img_id = self.img_ids[idx]
             if img_id[-3:] == 'tif':
                 x = imread(os.path.join(self.imgs_path, img_id))
+                x = np.clip(np.array(x), None, np.quantile(x, .99))
             elif img_id[-2:] == '.t':
                 x = torch.load(os.path.join(self.imgs_path, img_id))
-        x = np.clip(np.array(x), None, np.quantile(x, .99))
         x = torch.tensor(x) / x.max()
         if self.norm:
             G_blur = torchvision.transforms.GaussianBlur(5, 1.5)
@@ -420,3 +422,36 @@ class LightningCLR(pl.LightningModule):
         loss = self.loss_fn(zi, zj, self.loss_type)
         print('val loss', loss)
         return {"val_loss": loss}
+
+
+class PretrainedResnet(nn.Module):
+    def __init__(self, new_in_channels=10):
+        super(PretrainedResnet, self).__init__()
+        self.new_in_channels = new_in_channels
+        self.model = models.resnet18(pretrained=True)
+        self.layer = self.model.conv1
+
+        self.new_layer = nn.Conv2d(in_channels=self.new_in_channels,
+                                   out_channels=self.layer.out_channels,
+                                   kernel_size=self.layer.kernel_size,
+                                   stride=self.layer.stride,
+                                   padding=self.layer.padding,
+                                   bias=self.layer.bias)
+
+    def expand_input_weights(self):
+        copy_weights = 0
+        self.new_layer.weight[:, :layer.in_channels, :, :].data = self.layer.weight.clone()
+        num_iterations, leftover = int(new_in_channels//3) int(new_in_channels%3)
+
+
+        for i in range(self.new_in_channels - self.layer.in_channels):
+            channel = self.layer.in_channels + i
+            channel_iterator = copy_weights % 3
+            self.new_layer.weight[:, channel:channel + 1, :, :].data = self.layer.weight[:, channel_iterator:channel_iterator + 1, ::].clone()
+            self.new_layer.weight = nn.Parameter(self.new_layer.weight)
+            self.model.conv1 = self.new_layer
+            copy_weights += 1
+        return self.model
+
+    def forward(self, x):
+        return self.model(x)
