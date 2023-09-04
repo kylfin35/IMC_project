@@ -428,7 +428,7 @@ class PretrainedResnet(nn.Module):
     def __init__(self, new_in_channels=10):
         super(PretrainedResnet, self).__init__()
         self.new_in_channels = new_in_channels
-        self.model = models.resnet18(pretrained=True)
+        self.model = models.resnet18(weights=None)
         self.layer = self.model.conv1
 
         self.new_layer = nn.Conv2d(in_channels=self.new_in_channels,
@@ -437,21 +437,21 @@ class PretrainedResnet(nn.Module):
                                    stride=self.layer.stride,
                                    padding=self.layer.padding,
                                    bias=self.layer.bias)
+        self.expanded_model = self.expand_input_weights(self.model, self.new_layer)
 
-    def expand_input_weights(self):
-        copy_weights = 0
-        self.new_layer.weight[:, :layer.in_channels, :, :].data = self.layer.weight.clone()
-        num_iterations, leftover = int(new_in_channels//3), int(new_in_channels%3)
-
-
+    def expand_input_weights(self, model_, new_layer_):
+        iterator = 0
+        self.new_layer.weight[:, :self.layer.in_channels, :, :].data = self.layer.weight.clone()
+        new_layer_.weight[:, :self.layer.in_channels, :, :].data = self.layer.weight.clone()
         for i in range(self.new_in_channels - self.layer.in_channels):
             channel = self.layer.in_channels + i
-            channel_iterator = copy_weights % 3
-            self.new_layer.weight[:, channel:channel + 1, :, :].data = self.layer.weight[:, channel_iterator:channel_iterator + 1, ::].clone()
-            self.new_layer.weight = nn.Parameter(self.new_layer.weight)
-            self.model.conv1 = self.new_layer
-            copy_weights += 1
-        return self.model
+            channel_iterator = iterator % 3
+            new_layer_.weight[:, channel:channel + 1, :, :].data = self.layer.weight[:,
+                                                                   channel_iterator:channel_iterator + 1, ::].clone()
+            new_layer_.weight = nn.Parameter(new_layer_.weight)
+            iterator += 1
+        model_.conv1 = new_layer_
+        return model_
 
     def forward(self, x):
-        return self.model(x)
+        return self.expanded_model(x)
