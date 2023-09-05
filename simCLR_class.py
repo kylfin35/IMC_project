@@ -303,7 +303,7 @@ class MLP_head(nn.Module):
 
 class SaveModule(nn.Module):
     def __init__(self, encoder_, mlp_):
-        super(save_module, self).__init__()
+        super(SaveModule, self).__init__()
         self.encoder_ = encoder_
         self.mlp_ = mlp_
 
