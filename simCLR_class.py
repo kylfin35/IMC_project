@@ -33,14 +33,14 @@ class Augmenter(nn.Module):
         rand_apply_s_crop = torchvision.transforms.RandomApply(torch.nn.ModuleList([resizecrop_strong]), p=1)
         rand_apply_w_crop = torchvision.transforms.RandomApply(torch.nn.ModuleList([resizecrop_weak]), p=1)
         self.strong_transforms = torchvision.transforms.Compose([h_flip, v_flip, rand_apply, rand_apply_s_crop])
-        self.weak_transforms = torchvision.transforms.Compose([h_flip, v_flip, rand_apply_w_crop, erase])
+        self.weak_transforms = torchvision.transforms.Compose([h_flip, v_flip, rand_apply_w_crop])
 
     def forward(self, frame, strength):
         if strength == 'Strong':
             frame = self.strong_transforms(frame)
             jitter = (torch.rand(frame.shape[1], 1, 1) * .6) + .7
             # jitter[jitter<.75] = 0
-            if random.uniform(0, 1) < .66:
+            if random.uniform(0, 1) < .75:
                 thresh = np.random.normal(0, 1) * .1 + .4
                 rand_idxs = np.random.choice(len(frame), size=5, replace=False)
                 # frame[rand_idxs] = torch.where(frame[rand_idxs]>thresh, torch.ones_like(frame[rand_idxs]), torch.zeros_like(frame[rand_idxs]))
@@ -49,7 +49,7 @@ class Augmenter(nn.Module):
         elif strength == 'Weak':
             frame = self.weak_transforms(frame)
             if random.uniform(0, 1) < .9:
-                jitter = (torch.rand(frame.shape[1], 1, 1) * .2) + .9
+                jitter = (torch.rand(frame.shape[1], 1, 1) * .4) + .8
                 # jitter[jitter<.87] = 0
                 frame = jitter.to(frame.device) * frame
 
@@ -128,32 +128,44 @@ class ImageDataset(Dataset):
         a, _, _ = dataset[0]
         return a.shape[1]
 
+    def normalize_image(self, x):
+        G_blur = torchvision.transforms.GaussianBlur(5, 1.5)
+        x = G_blur(x)
+        for c in range(len(x)):
+            x[c] = np.clip(np.array(x[c]), None, np.quantile(x[c], .99))
+        nan = np.where(x == 0, np.nan, x)
+        quant = np.nanquantile(nan, .999, axis=(1, 2))
+        x = x / quant.reshape(-1, 1, 1)
+        totals = torch.sum(x, dim=0).unsqueeze(0) + 1e-5
+        totals = torch.repeat_interleave(totals, x.shape[0], dim=0)
+        x = x / totals
+        # x = x / quant.reshape(-1,1,1)
+        x = x / x.max()
+        return x
+
     def __getitem__(self, idx):
         if self.imgs_path[-3:] == 'npz':
             x = self.np_images[idx]
             x = np.clip(np.array(x), None, np.quantile(x, .99))
         else:
             img_id = self.img_ids[idx]
-            if img_id[-3:] == 'tif':
+            if img_id[-3:] == 'iff':
                 x = imread(os.path.join(self.imgs_path, img_id))
                 x = np.clip(np.array(x), None, np.quantile(x, .99))
             elif img_id[-2:] == '.t':
                 x = torch.load(os.path.join(self.imgs_path, img_id))
         x = torch.tensor(x) / x.max()
         if self.norm:
-            G_blur = torchvision.transforms.GaussianBlur(5, 1.5)
-            x = G_blur(x)
-            totals = torch.sum(x, dim=0).unsqueeze(0) + 1e-5
-            totals = torch.repeat_interleave(totals, x.shape[0], dim=0)
-            x = x / totals
-            x = x / x.max()
+            x = self.normalize_image(x)
 
-        if self.n_tiles == None:
-            return x.squeeze()
-        else:
-            anchors, neighbors, corners = self.tile_image(x, self.tilesize, self.n_tiles, self.delta, self.n_neighbors)
-            anchors, neighbors = torch.tensor(np.array(anchors)).float(), torch.tensor(np.array(neighbors)).float()
-            return anchors, neighbors, corners
+        anchors, neighbors, corners = self.tile_image(x, self.tilesize, self.n_tiles, self.delta, self.n_neighbors)
+        anchors, neighbors = torch.tensor(np.array(anchors)).float(), torch.tensor(np.array(neighbors)).float()
+        resize = torchvision.transforms.Resize((224, 224), antialias=True)
+        neighbors = resize(
+            neighbors.reshape(self.n_neighbors * self.n_tiles, anchors.shape[1], anchors.shape[2], anchors.shape[3]))
+        anchors = resize(anchors)
+        return anchors, neighbors.reshape(self.n_neighbors, self.n_tiles, anchors.shape[1], anchors.shape[2],
+                                          anchors.shape[3]), corners
 
 
 class Residual(nn.Module):
@@ -385,10 +397,10 @@ class LightningCLR(pl.LightningModule):
         # if r1<.66:
         #   xi = self.augmenter(xi, 'Strong')
         # else:
-        if r2 < .33:
-            xi = self.augmenter(xi, 'Weak')
-        elif r2 > .66:
-            xi = self.augmenter(xi, 'Strong')
+        #if r2 < .51:
+        #    xi = self.augmenter(xi, 'Weak')
+        #elif r2 > .5:
+        #    xi = self.augmenter(xi, 'Strong')
 
         conv = self.encoder(xi)
         zi = self.mlp(conv)
@@ -429,6 +441,7 @@ class PretrainedResnet(nn.Module):
         super(PretrainedResnet, self).__init__()
         self.new_in_channels = new_in_channels
         self.model = models.resnet18(weights=None)
+        self.model = models.densenet121(weights=None)
         self.layer = self.model.conv1
 
         self.new_layer = nn.Conv2d(in_channels=self.new_in_channels,
