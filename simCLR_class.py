@@ -441,7 +441,7 @@ class PretrainedResnet(nn.Module):
         super(PretrainedResnet, self).__init__()
         self.new_in_channels = new_in_channels
         self.model = models.resnet18(weights=None)
-        self.model = models.densenet121(weights=None)
+       # self.model = models.densenet121(weights=None)
         self.layer = self.model.conv1
 
         self.new_layer = nn.Conv2d(in_channels=self.new_in_channels,
