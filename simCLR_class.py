@@ -12,40 +12,42 @@ import pytorch_lightning as pl
 from flash.core.optimizers import LARS
 from torchvision import models
 
-
+# This class provides augmentations for tiles
 class Augmenter(nn.Module):
-    def __init__(self, tilesize):
+    def __init__(self, tile_size):
         super().__init__()
-        self.tilesize = tilesize
+        self.tile_size = tile_size
+        # augmentations below
         blur = torchvision.transforms.GaussianBlur(3, sigma=(.3, .6))
         h_flip = torchvision.transforms.RandomHorizontalFlip(p=.5)
         v_flip = torchvision.transforms.RandomVerticalFlip(p=.5)
-        # rotate = torchvision.transforms.RandomRotation(45)
+        ## rotate = torchvision.transforms.RandomRotation(45)
         rand_apply = torchvision.transforms.RandomApply(torch.nn.ModuleList([blur]), p=.5)
-        # rand_apply2 = torchvision.transforms.RandomApply(torch.nn.ModuleList([rotate]), p=.33)
-
-        erase = torchvision.transforms.RandomErasing(p=.5, scale=(.1, .33), ratio=(.2, 5), value=0)
-        ones = torchvision.transforms.RandomErasing(p=.5, scale=(.1, .33), ratio=(.2, 5), value=0)
-        resizecrop_strong = torchvision.transforms.RandomResizedCrop((tilesize, tilesize), scale=(0.25, 4),
-                                                                     ratio=(0.75, 1.3333))
-        resizecrop_weak = torchvision.transforms.RandomResizedCrop((tilesize, tilesize), scale=(0.66, 1.33),
-                                                                   ratio=(0.75, 1.3333))
+        ## rand_apply2 = torchvision.transforms.RandomApply(torch.nn.ModuleList([rotate]), p=.33)
+        ##erase = torchvision.transforms.RandomErasing(p=.5, scale=(.1, .33), ratio=(.2, 5), value=0)
+        ##ones = torchvision.transforms.RandomErasing(p=.5, scale=(.1, .33), ratio=(.2, 5), value=0)
+        resizecrop_strong = torchvision.transforms.RandomResizedCrop((tile_size, tile_size), scale=(0.25, 4),
+                                                                     ratio=(0.75, 1.3333), antialias=True)
+        resizecrop_weak = torchvision.transforms.RandomResizedCrop((tile_size, tile_size), scale=(0.66, 1.33),
+                                                                   ratio=(0.75, 1.3333), antialias=True)
         rand_apply_s_crop = torchvision.transforms.RandomApply(torch.nn.ModuleList([resizecrop_strong]), p=1)
         rand_apply_w_crop = torchvision.transforms.RandomApply(torch.nn.ModuleList([resizecrop_weak]), p=1)
+        # Apply transforms into strong and weak functions
         self.strong_transforms = torchvision.transforms.Compose([h_flip, v_flip, rand_apply, rand_apply_s_crop])
         self.weak_transforms = torchvision.transforms.Compose([h_flip, v_flip, rand_apply_w_crop])
 
     def forward(self, frame, strength):
+        # Apply strong transforms
         if strength == 'Strong':
             frame = self.strong_transforms(frame)
-            jitter = (torch.rand(frame.shape[1], 1, 1) * .6) + .7
-            # jitter[jitter<.75] = 0
-            if random.uniform(0, 1) < .75:
+            jitter = (torch.rand(frame.shape[1], 1, 1) * .6) + .7 # jitter between .7 - 1.3 x per channel
+            # Allows changing pixels to 0 and 1 based on random threshold for randomly selected 5 channels
+            if random.uniform(0, 1) < .75:  # apply jitter 75% of runs
                 thresh = np.random.normal(0, 1) * .1 + .4
                 rand_idxs = np.random.choice(len(frame), size=5, replace=False)
-                # frame[rand_idxs] = torch.where(frame[rand_idxs]>thresh, torch.ones_like(frame[rand_idxs]), torch.zeros_like(frame[rand_idxs]))
-            frame = jitter.to(frame.device) * frame
-
+                ## frame[rand_idxs] = torch.where(frame[rand_idxs]>thresh, torch.ones_like(frame[rand_idxs]), torch.zeros_like(frame[rand_idxs]))
+            frame = jitter.to(frame.device) * frame  # apply jitter
+        # Apply weak transforms
         elif strength == 'Weak':
             frame = self.weak_transforms(frame)
             if random.uniform(0, 1) < .9:
@@ -56,22 +58,24 @@ class Augmenter(nn.Module):
         return frame
 
 
+# This class processes tif and numpy hyperion image files and returns tiles
 class ImageDataset(Dataset):
     def __init__(self, imgs_path, n_tiles, delta, tilesize, channel_weight=None, strength='Weak', swav_=False,
                  norm=True, n_neighbors=1):
         self.imgs_path = imgs_path
-        if self.imgs_path[-3:] == 'npz':
+        if self.imgs_path[-3:] == 'npz':  # for numpy files
             self.np_images, self.img_ids = self.process_np(self.imgs_path)
-        else:
+        else:  # primarily tiff files
             self.img_ids = [a for a in os.listdir(imgs_path)]
         self.n_tiles = n_tiles
         self.delta = delta
         self.tilesize = tilesize
         self.strength = strength
-        self.swav_ = swav_
-        self.norm = norm
+        self.swav_ = swav_  # boolean
+        self.norm = norm  # boolean
         self.n_neighbors = n_neighbors
 
+    #for numpy images, pre-processes and returns as array
     def process_np(self, path_):
         data = np.load(path_, allow_pickle=True)
         np_images = data['X']
@@ -84,32 +88,42 @@ class ImageDataset(Dataset):
     def __len__(self):
         return len(self.img_ids)
 
+    # This function takes an image in numpy_array format and returns (n tiles, n neighbors)
+    # Neighbors are nearby tiles of same size chosen at random per delta variable
     def tile_image(self, np_img, tilesize, n, delta, n_neighbors=1):
         if len(np_img.shape) == 3:
             np_img = np.expand_dims(np_img, 0)
-        cornerlst = []
-        neighbors_lst = []
-        counter = 0
-        anchors_ = np.empty([n, np_img.shape[1], tilesize, tilesize])
-        neighbors_ = np.empty([n, np_img.shape[1], tilesize, tilesize])
+        cornerlst = []  # append top left corner of tiles
+        neighbors_lst = []  #append neighbor tiles
+        counter = 0  # counts valid (non-corner) tiles
+        anchors_ = np.empty([n, np_img.shape[1], tilesize, tilesize])  # filled later
+        neighbors_ = np.empty([n, np_img.shape[1], tilesize, tilesize])   # filled later
 
+        # Only appends tiles and neighbors that are over certain intensity threshold
+        # Will continue to randomly select locations until n valid tiles are chosen
         while counter < n:
+            # Choose corner  along x axis and y axis
+            # ensure that corner will not result in tile 'hanging off' edge
             xl = random.sample(range(0, (np_img.shape[2] - tilesize - 1)), 1)[0]
             yl = random.sample(range(0, (np_img.shape[3] - tilesize - 1)), 1)[0]
-            anchor = np_img[:, :, xl:xl + tilesize, yl:yl + tilesize]
-            if anchor.mean() > .005:
+            anchor = np_img[:, :, xl:xl + tilesize, yl:yl + tilesize]  # anchor is tile selected from image
+            if anchor.mean() > .005:  # only count tiles with valid signal intensity
                 anchors_[counter] = anchor
                 cornerlst.append([[xl, yl]])
                 counter += 1
             else:
                 pass
 
+        # Collect neighbors
+        # iterate through number neighbors. >1 neighbor can be chosen for space-smoothing effect
         for i in range(n_neighbors):
-            neighbors_tmp = np.empty([n, np_img.shape[1], tilesize, tilesize])
-            for e, corner in enumerate(cornerlst):
-                xl, yl = corner[0]
-                xdelta = int(np.rint(random.gauss(0, delta))) + xl
-                ydelta = int(np.rint(random.gauss(0, delta))) + yl
+            neighbors_tmp = np.empty([n, np_img.shape[1], tilesize, tilesize])  # filled later
+            for e, corner in enumerate(cornerlst):  # iterate through anchor locations
+                xl, yl = corner[0]  # anchor corner
+                # Choose nearby corner, normal distribution, scaled by delta
+                xdelta = int(np.rint(random.gauss(0, delta))) + xl  # x axis new corner
+                ydelta = int(np.rint(random.gauss(0, delta))) + yl  # y axis new corner
+                # Ensure new corner does not 'hang off' edge
                 if xdelta < 0:
                     xdelta = 0
                 elif xdelta + tilesize > np_img.shape[2]:
@@ -118,17 +132,20 @@ class ImageDataset(Dataset):
                     ydelta = 0
                 elif ydelta + tilesize > np_img.shape[3]:
                     ydelta = np_img.shape[3] - tilesize - 1
-                neighbor = np_img[:, :, xdelta:xdelta + tilesize, ydelta:ydelta + tilesize]
+                neighbor = np_img[:, :, xdelta:xdelta + tilesize, ydelta:ydelta + tilesize] #from same image as tile
                 neighbors_tmp[e] = neighbor
             neighbors_lst.append(neighbors_tmp)
         corners = np.concatenate(cornerlst)
         return anchors_, neighbors_lst, corners
 
+    # This function determines number of channels in images, which varies by dataset
     def get_num_markers(self, dataset):
         a, _, _ = dataset[0]
         return a.shape[1]
 
+    # This function normalizes image according to parameters given above
     def normalize_image(self, x):
+        # Always apply gaussian blur
         G_blur = torchvision.transforms.GaussianBlur(5, 1.5)
         x = G_blur(x)
         for c in range(len(x)):
@@ -168,9 +185,12 @@ class ImageDataset(Dataset):
                                           anchors.shape[3]), corners
 
 
+# This class provides residual blocks for custom neural network
 class Residual(nn.Module):
     def __init__(self, in_channels, out_channels, res_channels, norm_type='Batchnorm'):
         super(Residual, self).__init__()
+        # Choose batchnorm vs groupnorm. Groupnorm better for small batch size
+        # Unclear which performs better at large batch sizes
         if norm_type == 'Batchnorm':
             self.norm = nn.BatchNorm2d(res_channels)
         elif norm_type == 'Groupnorm':
@@ -180,7 +200,7 @@ class Residual(nn.Module):
             nn.Conv2d(in_channels=in_channels,
                       out_channels=res_channels,
                       kernel_size=3, stride=1, padding=1, bias=False),
-            self.norm, )
+            self.norm, ) # create basic block
         # nn.BatchNorm2d(res_channels),
         # nn.GroupNorm(4, res_channels),#, affine=False),
         # nn.ReLU(True),
