@@ -52,6 +52,8 @@ class ImageDataset(Dataset):
                                                                                  level=0).values  # convert from 2d to 3d by pixel value
         arr3d = np.reshape(arr2d, (arr2d.shape[0], arr2d.shape[1] // len(keep_), len(keep_)), order='F').transpose(2, 0,
                                                                                                                    1)  # reshape into proper 3d shape
+        if np.isnan(arr3d).any():
+            arr3d[np.isnan(arr3d)] = 0
         return arr3d
 
     def __len__(self):
