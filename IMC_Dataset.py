@@ -167,11 +167,14 @@ class ImageDataset(Dataset):
         x = gaussian_filter(x, (0, 1.5, 1.5)) # gaussian filter all images
         if norm_scale:  # pixel norm
             nan = np.where(x == 0, np.nan, x)  # create mask that doesn't acount for 0 values
-            quant = np.nanquantile(nan, .999, axis=(1, 2))  # along channel axis
-            x = torch.from_numpy(x / quant.reshape(-1, 1, 1))  # divide out by 99.9% non-zero value for channel
-            totals = torch.sum(x, dim=0).unsqueeze(0) + 1e-5  # reshape scale factor
-            totals = torch.repeat_interleave(totals, x.shape[0], dim=0)  # sum of relative channel intensity per channel
-            x = x / totals  # create pixel-level scaling
+            if bool(np.isnan(nan).all()): # for slice that is all 0
+                pass
+            else:
+                quant = np.nanquantile(nan, .999, axis=(1, 2))  # along channel axis
+                x = torch.from_numpy(x / quant.reshape(-1, 1, 1))  # divide out by 99.9% non-zero value for channel
+                totals = torch.sum(x, dim=0).unsqueeze(0) + 1e-5  # reshape scale factor
+                totals = torch.repeat_interleave(totals, x.shape[0], dim=0)  # sum of relative per channel intensity
+                x = x / totals  # create pixel-level scaling
         return x / x.max()  # 0-1 norm
 
     def __getitem__(self, idx):
