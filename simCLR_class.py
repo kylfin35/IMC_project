@@ -463,8 +463,8 @@ class PretrainedResnet(nn.Module):
         self.model = models.resnet18(weights=None)
         self.model.conv1 = nn.Conv2d(self.new_in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
 
-        self.model = self.replace_batchnorm_with_groupnorm(self.resnet)
-        self.model.fc = nn.Linear(self.resnet.fc.in_features, self.latent_size)
+        self.model = self.replace_batchnorm_with_groupnorm(self.model)
+        self.model.fc = nn.Linear(self.model.fc.in_features, self.latent_size)
 
        # self.model = models.densenet121(weights=None)
       #  self.layer = self.model.conv1
