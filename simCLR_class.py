@@ -439,7 +439,7 @@ class LightningCLR(pl.LightningModule):
         loss = self.loss_fn(zi, zj, self.loss_type)
         if batch_idx % 10 == 0:
             print(epoch, loss)
-
+        self.log("train_loss", loss, prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
     def validation_step(self, val_batch, batch_idx):

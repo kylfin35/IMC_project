@@ -196,7 +196,7 @@ class ImageDataset(Dataset):
         x = self.normalize_image(x, self.norm)  # all images processed
         if self.uniform_tiling: # for testing
             output, corners, nulls = self.tile_image_uniform(x, None, self.tilesize, rm_blank=False, thresh=0)
-            return output, corners, img_id, nulls  # evenly spaced tiles and location
+            return output, corners, img_id.strip('.tiff'), nulls  # evenly spaced tiles and location
         else:  # for training
             anchors, neighbors, corners = self.tile_image(x, self.tilesize, self.n_tiles, self.delta, self.n_neighbors)
             anchors, neighbors = torch.tensor(np.array(anchors)).float(), torch.tensor(np.array(neighbors)).float()
