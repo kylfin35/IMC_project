@@ -457,21 +457,36 @@ class LightningCLR(pl.LightningModule):
 
 
 class PretrainedResnet(nn.Module):
-    def __init__(self, new_in_channels=10):
+    def __init__(self, new_in_channels=10, latent_size=128):
         super(PretrainedResnet, self).__init__()
-        self.new_in_channels = new_in_channels
+        self.new_in_channels, self.latent_size = new_in_channels, latent_size
         self.model = models.resnet18(weights=None)
+        self.model.conv1 = nn.Conv2d(self.new_in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+
+        self.model = self.replace_batchnorm_with_groupnorm(self.resnet)
+        self.model.fc = nn.Linear(self.resnet.fc.in_features, self.latent_size)
+
        # self.model = models.densenet121(weights=None)
-        self.layer = self.model.conv1
+      #  self.layer = self.model.conv1
 
-        self.new_layer = nn.Conv2d(in_channels=self.new_in_channels,
-                                   out_channels=self.layer.out_channels,
-                                   kernel_size=self.layer.kernel_size,
-                                   stride=self.layer.stride,
-                                   padding=self.layer.padding,
-                                   bias=self.layer.bias)
-        self.expanded_model = self.expand_input_weights(self.model, self.new_layer)
 
+       # self.new_layer = nn.Conv2d(in_channels=self.new_in_channels,
+        #                           out_channels=self.layer.out_channels,
+         #                          kernel_size=self.layer.kernel_size,
+          #                         stride=self.layer.stride,
+           #                        padding=self.layer.padding,
+            #                       bias=self.layer.bias)
+       # self.expanded_model = self.expand_input_weights(self.model, self.new_layer)
+
+    def replace_batchnorm_with_groupnorm(self, module):
+        for name, child in module.named_children():
+            if isinstance(child, nn.BatchNorm2d):
+                num_groups = 32  # You can adjust the number of groups as needed
+                new_layer = nn.GroupNorm(num_groups, child.num_features)
+                setattr(module, name, new_layer)
+            else:
+                self.replace_batchnorm_with_groupnorm(child)
+        return module
     def expand_input_weights(self, model_, new_layer_):
         iterator = 0
         self.new_layer.weight[:, :self.layer.in_channels, :, :].data = self.layer.weight.clone()
@@ -487,4 +502,4 @@ class PretrainedResnet(nn.Module):
         return model_
 
     def forward(self, x):
-        return self.expanded_model(x)
+        return self.model(x)
