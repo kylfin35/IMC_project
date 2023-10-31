@@ -189,6 +189,8 @@ class ImageDataset(Dataset):
             img_id = self.img_ids[idx]
             if img_id[-3:] == 'iff':
                 x = imread(os.path.join(self.imgs_path, img_id))  # tiff files
+                if np.isnan(x).any():
+                    x[np.isnan(x)] = 0
             elif img_id[-3:] == 'txt':  # specifically for DLBCL
                 x = self.process_txt(os.path.join(self.imgs_path, img_id), self.keep_markers)
         x = self.normalize_image(x, self.norm)  # all images processed
