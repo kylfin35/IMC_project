@@ -14,7 +14,7 @@ from scipy.ndimage import gaussian_filter
 # This class processes multiple IMC file types and returns pre-processed tiles of the image for a given path
 class ImageDataset(Dataset):
     def __init__(self, imgs_path, n_tiles, delta, tilesize, resize_=None, strength='Weak', swav_=False,
-                 norm=True, n_neighbors=1, uniform_tiling=False):
+                 norm=True, n_neighbors=1, uniform_tiling=False, whole_image=False):
         self.imgs_path = imgs_path  # path for files directory. Must contain ONLY image files
         if self.imgs_path[-3:] == 'npz':  # for handling numpy (lung)
             self.np_images, self.img_ids = self.process_np(self.imgs_path)  # process numpy
@@ -33,6 +33,7 @@ class ImageDataset(Dataset):
         self.n_neighbors = n_neighbors  # num neighbors (for latent smoothing)
         self.resize_ = resize_  # to resize tiles (pretrained resnet)
         self.uniform_tiling = uniform_tiling  # for testing. Evenly spaced tiles from image
+        self.whole_image = whole_image  # for testing. Whole image, no tiling
 
     # this function handles lung Numpy file format
     def process_np(self, path_):
@@ -194,17 +195,20 @@ class ImageDataset(Dataset):
             elif img_id[-3:] == 'txt':  # specifically for DLBCL
                 x = self.process_txt(os.path.join(self.imgs_path, img_id), self.keep_markers)
         x = self.normalize_image(x, self.norm)  # all images processed
-        if self.uniform_tiling: # for testing
-            output, corners, nulls = self.tile_image_uniform(x, None, self.tilesize, rm_blank=False, thresh=0)
-            return output, corners, img_id.strip('.tiff'), nulls  # evenly spaced tiles and location
-        else:  # for training
-            anchors, neighbors, corners = self.tile_image(x, self.tilesize, self.n_tiles, self.delta, self.n_neighbors)
-            anchors, neighbors = torch.tensor(np.array(anchors)).float(), torch.tensor(np.array(neighbors)).float()
-            if self.resize_ != None:  #resize function (resnet)
-                resize = torchvision.transforms.Resize((self.resize_, self.resize_), antialias=True)
-                neighbors = resize(
-                    neighbors.reshape(self.n_neighbors * self.n_tiles, anchors.shape[1], anchors.shape[2],
-                                      anchors.shape[3]))
-                anchors = resize(anchors)
-            return anchors, neighbors.reshape(self.n_neighbors, self.n_tiles, anchors.shape[1], anchors.shape[2],
-                                              anchors.shape[3]), corners
+        if self.whole_image:  # for testing
+            return x, img_id.strip('.tiff')
+        else:
+            if self.uniform_tiling: # for testing
+                output, corners, nulls = self.tile_image_uniform(x, None, self.tilesize, rm_blank=False, thresh=0)
+                return output, corners, img_id.strip('.tiff'), nulls  # evenly spaced tiles and location
+            else:  # for training
+                anchors, neighbors, corners = self.tile_image(x, self.tilesize, self.n_tiles, self.delta, self.n_neighbors)
+                anchors, neighbors = torch.tensor(np.array(anchors)).float(), torch.tensor(np.array(neighbors)).float()
+                if self.resize_ != None:  #resize function (resnet)
+                    resize = torchvision.transforms.Resize((self.resize_, self.resize_), antialias=True)
+                    neighbors = resize(
+                        neighbors.reshape(self.n_neighbors * self.n_tiles, anchors.shape[1], anchors.shape[2],
+                                        anchors.shape[3]))
+                    anchors = resize(anchors)
+                return anchors, neighbors.reshape(self.n_neighbors, self.n_tiles, anchors.shape[1], anchors.shape[2],
+                                                anchors.shape[3]), corners
