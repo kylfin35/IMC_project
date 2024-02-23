@@ -188,7 +188,7 @@ class ImageDataset(Dataset):
             x = np.clip(np.array(x), None, np.quantile(x, .99))
         else:
             img_id = self.img_ids[idx]
-            if img_id[-3:] == 'iff':
+            if img_id[-3:] in ['iff', 'tif']:
                 x = imread(os.path.join(self.imgs_path, img_id))  # tiff files
                 if np.isnan(x).any():
                     x[np.isnan(x)] = 0
