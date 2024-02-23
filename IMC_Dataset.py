@@ -200,6 +200,9 @@ class ImageDataset(Dataset):
         else:
             if self.uniform_tiling: # for testing
                 output, corners, nulls = self.tile_image_uniform(x, None, self.tilesize, rm_blank=False, thresh=0)
+                if self.resize_ != None:  #resize function (resnet)
+                    resize = torchvision.transforms.Resize((self.resize_, self.resize_), antialias=True)
+                    output = resize(output)
                 return output, corners, img_id.strip('.tiff'), nulls  # evenly spaced tiles and location
             else:  # for training
                 anchors, neighbors, corners = self.tile_image(x, self.tilesize, self.n_tiles, self.delta, self.n_neighbors)
