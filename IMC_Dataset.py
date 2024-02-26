@@ -198,7 +198,7 @@ class ImageDataset(Dataset):
         if self.whole_image:  # for testing
             if self.resize_ != None:
                 resize = torchvision.transforms.Resize((self.resize_, self.resize_), antialias=True)
-                x = resize(x)
+                x = resize(torch.tensor(x))
             return x, img_id.strip('.tiff')
         else:
             if self.uniform_tiling: # for testing
