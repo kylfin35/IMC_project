@@ -196,6 +196,9 @@ class ImageDataset(Dataset):
                 x = self.process_txt(os.path.join(self.imgs_path, img_id), self.keep_markers)
         x = self.normalize_image(x, self.norm)  # all images processed
         if self.whole_image:  # for testing
+            if self.resize_ != None:
+                resize = torchvision.transforms.Resize((self.resize_, self.resize_), antialias=True)
+                x = resize(x)
             return x, img_id.strip('.tiff')
         else:
             if self.uniform_tiling: # for testing
