@@ -167,7 +167,7 @@ class ImageDataset(Dataset):
         # first clip each channel independently
         for c in range(len(x)):
             x[c] = np.clip(np.array(x[c]), None, np.quantile(x[c], .99))
-        x = gaussian_filter(x, (0, 1.5, 1.5)) # gaussian filter all images
+        x = gaussian_filter(x, (0, .75, .75)) # gaussian filter all images
         if norm_scale:  # pixel norm
             nan = np.where(x == 0, np.nan, x)  # create mask that doesn't acount for 0 values
             if bool(np.isnan(nan).all()): # for slice that is all 0
