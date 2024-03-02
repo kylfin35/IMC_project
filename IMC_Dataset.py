@@ -165,11 +165,11 @@ class ImageDataset(Dataset):
     # This function normalizes image, with or without pixel-norm
     def normalize_image(self, x, norm_scale=True):
         # first clip each channel independently
+        x = (x/x.max()) * 255 ##
+        x = x.astype(np.uint8) ##
         for c in range(len(x)):
             x[c] = np.clip(np.array(x[c]), None, np.quantile(x[c], .99))
         x = gaussian_filter(x, (0, .75, .75)) # gaussian filter all images
-        x = (x/x.max()) * 255 ##
-        x = x.astype(np.uint8) ##
         if norm_scale:  # pixel norm
             nan = np.where(x == 0, np.nan, x)  # create mask that doesn't acount for 0 values
             if bool(np.isnan(nan).all()): # for slice that is all 0
