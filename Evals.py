@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 import numpy as np
 import matplotlib.pyplot as plt
+from IMC_Dataset import ImageDataset
+import torchvision
+from sklearn.decomposition import PCA
+import copy
 
 
 def view_attn_heads(model_, img, pca_ = None, view=True, patch_size = 8):
@@ -70,17 +74,18 @@ def view_attn_heads(model_, img, pca_ = None, view=True, patch_size = 8):
   return attentions
 
 
-def stitch_attention_heads(model_, n, path_):
+def stitch_attention_heads(model_, n, path_, tilesize2=128, data_norm=(None, None)):
     #input model, image number,
-    model = model_.student_backbone.to(device)
-    uniform_dset = ImageDataset2(path_, n_tiles=0, delta=0, tilesize=tilesize2, resize_=224, strength='Weak', swav_=False,norm=False, n_neighbors=0, uniform_tiling=True, whole_image=False)
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    model = model_.to(device)
+    uniform_dset = ImageDataset(path_, n_tiles=0, delta=0, tilesize=tilesize2, resize_=224, strength='Weak', swav_=False,norm=False, n_neighbors=0, uniform_tiling=True, whole_image=False)
     tiles = uniform_dset[n][0]
     corners =  uniform_dset[n][1]
     x_steps = int(corners[:,0].max()//tilesize2) + 1
     y_steps = int(corners[:,1].max()//tilesize2) + 1
     x_width, y_width = int(x_steps*224), int(y_steps*224)
     stitched = np.zeros((6, x_width,  y_width))
-
+    data_norm = torchvision.transforms.Normalize(mean = data_norm[0], std = data_norm[1])
     i = 0
     for y_ in range(y_steps):
       for x_ in range(x_steps):
@@ -96,3 +101,57 @@ def stitch_attention_heads(model_, n, path_):
     #stitched = np.stack(stitched)
 
     return stitched
+
+
+def create_pca(full):
+
+  pca = PCA(n_components=3)
+  pca = pca.fit(np.transpose(full, (1,2,0)).reshape(-1, full.shape[0]))
+
+  return pca
+
+
+def transform_with_pca(img, pca=None):
+
+  while len(img.shape) > 3:
+    img = img[0]
+
+  if pca is None:
+    pca = create_pca(img)
+
+  img = np.array(img)
+  img2 = np.transpose(img, (1,2,0)).reshape(-1, img.shape[0])
+  img2 = pca.transform(img2).reshape(img.shape[1], img.shape[2],3)
+  return img2
+
+
+def expand_input_dims(pretrained_model, input_dim, initialize_with= 'random'):
+
+  multiplex_vit = copy.deepcopy(pretrained_model)
+
+  # Create a new patch embedding layer
+  original_patch_embed = multiplex_vit.patch_embed
+  new_patch_embed = nn.Conv2d(input_dim, original_patch_embed.proj.out_channels,
+                              kernel_size=original_patch_embed.proj.kernel_size,
+                              stride=original_patch_embed.proj.stride,
+                              padding=original_patch_embed.proj.padding,
+                              bias=False)
+
+
+  # Initialize new layer
+  if initialize_with=='random':
+    new_patch_embed.weight.data.normal_(0, 1)
+
+  elif initialize_with=='avg':
+    old_weights =  pretrained_model.patch_embed.proj.weight.data
+    avg_weights = torch.mean(old_weights, dim=1, keepdim=True).repeat(1, input_dim, 1, 1)
+    new_patch_embed.weight.data = avg_weights + torch.randn_like(avg_weights)/2
+
+  elif initialize_with=='single':
+    single_weights =  pretrained_model.patch_embed.proj.weight.data[:,2,:,:].unsqueeze(1)
+    single_weights = single_weights.repeat(1, input_dim, 1, 1)
+    new_patch_embed.weight.data = single_weights + torch.randn_like(single_weights)/2
+
+  # Replace the original patch embedding layer with the new one
+  multiplex_vit.patch_embed.proj = new_patch_embed
+  return multiplex_vit
