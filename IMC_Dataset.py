@@ -12,6 +12,8 @@ from scipy.ndimage import gaussian_filter
 import tifffile
 
 # This class processes multiple IMC file types and returns pre-processed tiles of the image for a given path
+
+# This class processes multiple IMC file types and returns pre-processed tiles of the image for a given path
 class ImageDataset(Dataset):
     def __init__(self, imgs_path, n_tiles, delta, tilesize, resize_=None, strength='Weak', swav_=False,
                  norm=True, n_neighbors=1, uniform_tiling=False, whole_image=False):
@@ -165,8 +167,7 @@ class ImageDataset(Dataset):
     # This function normalizes image, with or without pixel-norm
     def normalize_image(self, x, norm_scale=True):
         # first clip each channel independently
-      #  x = (x/x.max()) * 255 ##
-       # x = x.astype(np.uint8) ##
+
         for c in range(len(x)):
             x[c] = np.clip(np.array(x[c]), None, np.quantile(x[c], .99))
         x = gaussian_filter(x, (0, .75, .75)) # gaussian filter all images
@@ -191,9 +192,9 @@ class ImageDataset(Dataset):
         else:
             img_id = self.img_ids[idx]
             if img_id[-3:] in ['iff', 'tif']:
-                #x = imread(os.path.join(self.imgs_path, img_id))  # tiff files
-                with tifffile.TiffFile(os.path.join(path, files[idx])) as tif:
-                  x = tif.asarray(out='memmap').astype(np.float32)  # Memory-mapped array
+               # x = imread(os.path.join(self.imgs_path, img_id))  # tiff files
+                with tifffile.TiffFile(os.path.join(self.imgs_path, img_id)) as tif:
+                  x = tif.asarray(maxworkers=1) #out='memmap'  Memory-mapped array
 
                 if np.isnan(x).any():
                     x[np.isnan(x)] = 0
